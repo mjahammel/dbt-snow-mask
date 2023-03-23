@@ -11,7 +11,9 @@
         {% set node_unique_id = node.unique_id | string %}
         {% set node_resource_type = node.resource_type | string %}
 
-        {% set meta_columns = dbt_snow_mask.get_meta_objects(node_unique_id,meta_key,node_resource_type) %}
+        {% do log('GET_MASKING_POLICY_LIST_FOR_MODELS: ' ~ meta_key ~ ' ' ~ node_database ~ ' ' ~ node_schema ~ ' ' ~ node_unique_id ~ ' ' ~ node_resource_type, info=true) %}
+
+        {% set meta_columns = dbt_snow_mask.get_meta_objects(node_unique_id, meta_key, node_resource_type) %}
     
         {%- for meta_tuple in meta_columns if meta_columns | length > 0 %}
             {{ log(modules.datetime.datetime.now().strftime("%H:%M:%S") ~ " | macro - meta_columns               : " ~ node_unique_id ~ " has " ~ meta_columns | string ~ " masking tags set", info=False) }}

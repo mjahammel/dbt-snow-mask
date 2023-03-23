@@ -6,3 +6,8 @@ models:
       - name: email
         meta:
           masking_policy: mp_encrypt_pii
+    meta:
+      row_access_policy: hide_random
+      row_access_policy_columns:
+        - address_id 
+        - customer_id 
