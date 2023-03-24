@@ -6,3 +6,8 @@ snapshots:
       - name: email
         meta:
           masking_policy: mp_encrypt_pii
+    meta:
+      row_access_policy: ra_hidden_customer
+      row_access_policy_columns: 
+        - customer_id
+        - address_id

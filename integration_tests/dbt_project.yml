@@ -17,8 +17,8 @@ clean-targets:
     - "dbt_packages"
     - "logs"
 
-#vars:
-#  use_force_applying_masking_policy: "True"
+vars:
+  use_force_applying_masking_policy: "True"
 #  use_common_masking_policy_db: "True"
 #  common_masking_policy_db: "DEMO_DB"
 #  common_masking_policy_schema: "COMPLIANCE"
@@ -34,9 +34,12 @@ seeds:
 models:
   pre-hook:
     - "{{ dbt_snow_mask.create_masking_policy('models')}}"
+    - "{{ dbt_snow_mask.create_row_access_policy('models')}}"
   post-hook: 
     - "{{ dbt_snow_mask.apply_masking_policy('models') }}"
+    - "{{ dbt_snow_mask.apply_row_access_policy('models')}}"
 #    - "{{ dbt_snow_mask.unapply_masking_policy('models') }}"
+#    - "{{ dbt_snow_mask.unapply_row_access_policy('models') }}"
 
 snapshots:
   post-hook: 
@@ -49,6 +52,8 @@ snapshots:
 
 on-run-start:
   - "{{ dbt_snow_mask.create_masking_policy('sources')}}"
+  - "{{ dbt_snow_mask.create_row_access_policy('sources')}}"
 
 on-run-end:
   - "{{ dbt_snow_mask.apply_masking_policy('sources')}}"
+  - "{{ dbt_snow_mask.apply_row_access_policy('sources')}}"
