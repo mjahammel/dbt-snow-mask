@@ -45,7 +45,6 @@
           {% set columns = meta_tuple[3] %}
           {% set row_access_policy_name = meta_tuple[2] %}
           {% if row_access_policy_name is not none %}
-
             {% for row_access_policy_in_db in row_access_policy_list['ROW_ACCESS_POLICY'] %}
               {% do log('APPLY_ROW_ACCESS_POLICY_MODEL h: ' ~ columns ~ ' :: ' ~ row_access_policy_name ~ ' :: ' ~ row_access_policy_in_db ~ ' :: ' ~ row_access_policy_list['ROW_ACCESS_POLICY'], info=true) %}
               {% do log('APPLY_ROW_ACCESS_POLICY_MODEL i: ' ~ row_access_policy_db|upper ~ '.' ~ row_access_policy_schema|upper ~ '.' ~ row_access_policy_name|upper ~ ' :: ' ~ row_access_policy_in_db, info=true) %}
@@ -84,6 +83,35 @@
         {% endfor %}
       {% endif %}
     {% elif operation_type == "unapply" %}
+      {% for node in graph.nodes.values() -%}
+        {% set database = node.database | string %}
+        {% set schema   = node.schema | string %}
+        {% set node_unique_id = node.unique_id | string %}
+        {% set node_resource_type = node.resource_type | string %}
+        {% set materialization_map = {"table": "table", "view": "view", "incremental": "table", "snapshot": "table"} %}
+
+        {% if node_resource_type|lower in ["model", "snapshot"] %}
+          {# Append custom materializations to the list of standard materializations  #}
+          {% do materialization_map.update(fromjson(var('custom_materializations_map', '{}'))) %}
+
+          {% set materialization = materialization_map[node.config.get("materialized")] %}
+          {% set alias = node.alias %}
+
+          {% set meta_objects = dbt_snow_mask.get_row_access_meta_objects(model_resource_type, meta_key, true, model_id) %}
+          {%- for meta_tuple in meta_objects if meta_objects | length > 0 %}
+            {% set current_policy = meta_tuple[2] %}
+
+            {% if current_policy is not none %}
+              {{ log(modules.datetime.datetime.now().strftime("%H:%M:%S") ~ " | " ~ operation_type ~ "ing row access policy to model  : " ~ database|upper ~ '.' ~ schema|upper ~ '.' ~ masking_policy_name|upper ~ " on " ~ database ~ '.' ~ schema ~ '.' ~ alias, info=True) }}
+              {% set query %}
+                  alter {{materialization}} {{database}}.{{schema}}.{{alias}} drop row access policy {{ current_policy }}
+              {% endset %}
+              {% do log('APPLY_ROW_ACCESS_POLICY_MODEL ua: ' ~ query, info=true) %}
+              {% do run_query(query) %}
+            {% endif %}
+          {% endfor %}
+        {% endif %}
+      {% endfor %}
     {% endif %}
   {% endif %}
 {% endmacro %}

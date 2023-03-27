@@ -1,8 +1,9 @@
 {% macro get_row_access_meta_objects(resource_type, meta_key, include_optional=false, object_unique_id=none) %}
 
   {% set row_access_policies = [] %}
-  {% if resource_type == 'sources' %}
+  {% if resource_type == 'source' %}
     {% set graph_nodes = graph.sources.values() %}
+    {% do log('GET_ROW_ACCESS_META_OBJECTS g:' ~ graph_nodes, info=true) %} 
   {% else %}
     {% set graph_nodes = graph.nodes.values() %}
   {% endif %}

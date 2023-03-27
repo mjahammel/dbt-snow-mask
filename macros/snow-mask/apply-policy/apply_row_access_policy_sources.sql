@@ -25,10 +25,8 @@
                                                         materialization ~ ' :: ' ~
                                                         relation, info=true) %}
 
-      {% set meta_columns = dbt_snow_mask.get_meta_objects(unique_id, meta_key, resource_type) %}
       {% set row_access_policies = dbt_snow_mask.get_row_access_meta_objects(resource_type, meta_key, true, unique_id) %}
-      {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES c: ' ~ meta_columns, info=true) %}
-      {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES d: ' ~ row_access_policies, info=true) %}
+      {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES c: ' ~ row_access_policies, info=true) %}
 
       {# Use the database and schema for the source node: #}
       {% set row_access_policy_db = node.database %}
@@ -36,34 +34,62 @@
 		
       {% set (row_access_policy_db, row_access_policy_schema) = dbt_snow_mask.calculate_database_and_schema_name(row_access_policy_db, row_access_policy_schema) %}
 
-      {% set masking_policy_list_sql %}
+      {% set row_access_policy_list_sql %}
         show row access policies in {{row_access_policy_db}}.{{row_access_policy_schema}};
-        select $3||'.'||$4||'.'||$2 as masking_policy from table(result_scan(last_query_id()));
+        select $3||'.'||$4||'.'||$2 as row_access_policy from table(result_scan(last_query_id()));
       {% endset %}
 
       {# If there are some masking policies to be applied in this model, we should show the masking policies in the schema #}
-      {% if meta_columns | length > 0 %}
-        {% set masking_policy_list = dbt_utils.get_query_results_as_dict(masking_policy_list_sql) %}
+      {% if row_access_policies | length > 0 %}
+        {% set row_access_policy_list = dbt_utils.get_query_results_as_dict(row_access_policy_list_sql) %}
       {% endif %}
 
-      {%- for meta_tuple in meta_columns if meta_columns | length > 0 %}
-        {% set column   = meta_tuple[0] %}
-        {% set masking_policy_name  = meta_tuple[1] %}
+      {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES d: ' ~ row_access_policy_list, info=true) %}
 
-        {% if masking_policy_name is not none %}
-          {% for masking_policy_in_db in masking_policy_list['MASKING_POLICY'] %}
-            {% if row_access_policy_db|upper ~ '.' ~ row_access_policy_schema|upper ~ '.' ~ masking_policy_name|upper == masking_policy_in_db %}
-              {{ log(modules.datetime.datetime.now().strftime("%H:%M:%S") ~ " | " ~ operation_type ~ "ing masking policy to source : " ~ row_access_policy_db|upper ~ '.' ~ row_access_policy_schema|upper ~ '.' ~ masking_policy_name|upper ~ " on " ~ database ~ '.' ~ schema ~ '.' ~ identifier ~ '.' ~ column ~ ' [force = ' ~ var('use_force_applying_masking_policy','False') ~ ']', info=True) }}
+      {%- for meta_tuple in row_access_policies if row_access_policies | length > 0 %}
+        {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES f: ' ~ meta_tuple, info=true) %}
+        {% set columns = meta_tuple[3] %}
+        {% set row_access_policy_name = meta_tuple[2] %}
+        {% if row_access_policy_name is not none %}
+          {% for row_access_policy_in_db in row_access_policy_list['ROW_ACCESS_POLICY'] %}
+            {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES h: ' ~ columns ~ ' :: ' ~ row_access_policy_name ~ ' :: ' ~ row_access_policy_in_db ~ ' :: ' ~ row_access_policy_list['ROW_ACCESS_POLICY'], info=true) %}
+            {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES i: ' ~ row_access_policy_db|upper ~ '.' ~ row_access_policy_schema|upper ~ '.' ~ row_access_policy_name|upper ~ ' :: ' ~ row_access_policy_in_db, info=true) %}
+            {% if row_access_policy_db|upper ~ '.' ~ row_access_policy_schema|upper ~ '.' ~ row_access_policy_name|upper == row_access_policy_in_db %}
+              {{ log(modules.datetime.datetime.now().strftime("%H:%M:%S") ~ " | " ~ operation_type ~ "ing row access policy to model  : " ~ 
+                                                                                    row_access_policy_db|upper ~ '.' ~ row_access_policy_schema|upper ~ '.' ~ 
+                                                                                    row_access_policy_name|upper ~ " on " ~ database ~ '.' ~ schema ~ '.' ~ name ~ '.' ~ 
+                                                                                    columns ~ ' [force = ' ~ var('use_force_applying_masking_policy','False') ~ ']', info=True) }}
+              {# if force is in place, find if there is an existing row access policy on the object that must be replaced #}
+              {% if var('use_force_applying_masking_policy','False')|upper in ['TRUE','YES'] %}
+                {% set existing_policy_sql %}
+                  select policy_db || '.' || policy_schema || '.' || policy_name as row_access_policy
+                  from table({{database}}.information_schema.policy_references(ref_entity_name => '{{ database }}.{{ schema }}.{{ name }}', ref_entity_domain => '{{ materialization }}'))
+                  where policy_kind = 'ROW_ACCESS_POLICY';
+                {% endset %}
+                {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES j: ' ~ existing_policy_sql, info=true) %}
+                {% set results = run_query(existing_policy_sql) %}
+                {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES m: ' ~ results, info=true) %}
+                {% if results %}
+                  {% set existing_policy = results.rows[0][0] %}
+                {% endif %}
+                {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES k: ' ~ existing_policy, info=true) %}
+              {% endif %}
+
               {% set query %}
+                alter {{materialization}} {{database}}.{{schema}}.{{name}} 
                 {% if operation_type == "apply" %}
-                  alter {{materialization}}  {{database}}.{{schema}}.{{identifier}} modify column  {{column}} set masking policy  {{row_access_policy_db}}.{{row_access_policy_schema}}.{{masking_policy_name}} {% if var('use_force_applying_masking_policy','False')|upper in ['TRUE','YES'] %} force {% endif %}
+                  {%- if var('use_force_applying_masking_policy','False')|upper in ['TRUE','YES'] and existing_policy is defined %} drop row access policy {{ existing_policy }}, {%- endif %}
+                  add row access policy {{row_access_policy_db}}.{{row_access_policy_schema}}.{{row_access_policy_name}} on (
+                    {% for column in columns %} {{ column }} {% if not loop.last %},{% endif %}{% endfor %}
+                  );
                 {% elif operation_type == "unapply" %}
-                  alter {{materialization}}  {{database}}.{{schema}}.{{identifier}} modify column  {{column}} unset masking policy
+                  drop row access policy {{ existing_policy }};
                 {% endif %}
               {% endset %}
+              {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES g: ' ~ query, info=true) %}
               {% do run_query(query) %}
             {% endif %}
-          {% endfor %}
+          {% endfor %}        
         {% endif %}
       {% endfor %}
     {% endfor %}
