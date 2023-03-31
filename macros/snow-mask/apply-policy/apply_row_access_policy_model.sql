@@ -63,7 +63,7 @@
                 {% do log('APPLY_ROW_ACCESS_POLICY_MODEL j: ' ~ existing_policy_sql, info=true) %}
                 {% set results = run_query(existing_policy_sql) %}
                 {% if results %}
-                  {% set existing_policy = results.row[0][0] %}
+                  {% set existing_policy = results.rows[0][0] %}
                 {% endif %}
                 {% do log('APPLY_ROW_ACCESS_POLICY_MODEL k: ' ~ existing_policy, info=true) %}
                 {% endif %}
@@ -90,6 +90,12 @@
         {% set node_resource_type = node.resource_type | string %}
         {% set materialization_map = {"table": "table", "view": "view", "incremental": "table", "snapshot": "table"} %}
 
+        {% do log('APPLY_ROW_ACCESS_POLICY_MODEL ua: ' ~ node_unique_id ~ ' :: ' ~ 
+                                                         node_resource_type ~ ' :: ' ~ 
+                                                         meta_key ~ ' :: ' ~ 
+                                                         database ~ ' :: ' ~ 
+                                                         schema ~ ' :: ', info=true) %}
+
         {% if node_resource_type|lower in ["model", "snapshot"] %}
           {# Append custom materializations to the list of standard materializations  #}
           {% do materialization_map.update(fromjson(var('custom_materializations_map', '{}'))) %}
@@ -97,17 +103,33 @@
           {% set materialization = materialization_map[node.config.get("materialized")] %}
           {% set alias = node.alias %}
 
-          {% set meta_objects = dbt_snow_mask.get_row_access_meta_objects(model_resource_type, meta_key, true, model_id) %}
+          {% set meta_objects = dbt_snow_mask.get_row_access_meta_objects(node_resource_type, meta_key, true, node_unique_id) %}
+          {% do log('APPLY_ROW_ACCESS_POLICY_MODEL uc: ' ~ materialization ~ ' :: ' ~ node_unique_id ~ ' :: ' ~ meta_key ~ ' :: ' ~ meta_objects, info=true) %}
           {%- for meta_tuple in meta_objects if meta_objects | length > 0 %}
             {% set current_policy = meta_tuple[2] %}
 
+            {% do log('APPLY_ROW_ACCESS_POLICY_MODEL ud: ' ~ current_policy ~ ' :: ' ~ meta_tuple, info=true) %}
             {% if current_policy is not none %}
-              {{ log(modules.datetime.datetime.now().strftime("%H:%M:%S") ~ " | " ~ operation_type ~ "ing row access policy to model  : " ~ database|upper ~ '.' ~ schema|upper ~ '.' ~ masking_policy_name|upper ~ " on " ~ database ~ '.' ~ schema ~ '.' ~ alias, info=True) }}
-              {% set query %}
-                  alter {{materialization}} {{database}}.{{schema}}.{{alias}} drop row access policy {{ current_policy }}
+              {% set existing_policy_sql %}
+                select policy_db || '.' || policy_schema || '.' || policy_name as row_access_policy
+                from table({{database}}.information_schema.policy_references(ref_entity_name => '{{ database }}.{{ schema }}.{{ alias }}', ref_entity_domain => '{{ materialization }}'))
+                where policy_kind = 'ROW_ACCESS_POLICY';
               {% endset %}
-              {% do log('APPLY_ROW_ACCESS_POLICY_MODEL ua: ' ~ query, info=true) %}
-              {% do run_query(query) %}
+              {% do log('APPLY_ROW_ACCESS_POLICY_MODEL uj: ' ~ existing_policy_sql, info=true) %}
+              {% set results = run_query(existing_policy_sql) %}
+              {% if results %}
+                {% set existing_policy = results.rows[0][0] %}
+              {% endif %}
+              {% do log('APPLY_ROW_ACCESS_POLICY_MODEL uk: ' ~ existing_policy, info=true) %}
+
+              {% if existing_policy %}
+                {{ log(modules.datetime.datetime.now().strftime("%H:%M:%S") ~ " | " ~ operation_type ~ "ing row access policy to model  : " ~ database|upper ~ '.' ~ schema|upper ~ '.' ~ masking_policy_name|upper ~ " on " ~ database ~ '.' ~ schema ~ '.' ~ alias, info=True) }}
+                {% set query %}
+                    alter {{materialization}} {{database}}.{{schema}}.{{alias}} drop row access policy {{ existing_policy }}
+                {% endset %}
+                {% do log('APPLY_ROW_ACCESS_POLICY_MODEL ub: ' ~ query, info=true) %}
+                {% do run_query(query) %}
+              {% endif %}
             {% endif %}
           {% endfor %}
         {% endif %}

@@ -18,7 +18,7 @@ clean-targets:
     - "logs"
 
 vars:
-  use_force_applying_masking_policy: "True"
+#  use_force_applying_masking_policy: "True"
 #  use_common_masking_policy_db: "True"
 #  common_masking_policy_db: "DEMO_DB"
 #  common_masking_policy_schema: "COMPLIANCE"
@@ -44,6 +44,7 @@ models:
 snapshots:
   post-hook: 
     - "{{ dbt_snow_mask.apply_masking_policy('snapshots') }}"
+    - "{{ dbt_snow_mask.apply_row_access_policy('snapshots') }}"
   
   dbt_snow_mask_integration_tests:
     pii:

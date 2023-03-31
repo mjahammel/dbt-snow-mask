@@ -38,6 +38,7 @@
         show row access policies in {{row_access_policy_db}}.{{row_access_policy_schema}};
         select $3||'.'||$4||'.'||$2 as row_access_policy from table(result_scan(last_query_id()));
       {% endset %}
+      {% do log('APPLY_ROW_ACCESS_POLICY_SOURCES l: ' ~ row_access_policy_list_sql, info=true) %}
 
       {# If there are some masking policies to be applied in this model, we should show the masking policies in the schema #}
       {% if row_access_policies | length > 0 %}
